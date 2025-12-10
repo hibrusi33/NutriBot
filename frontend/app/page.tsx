@@ -23,23 +23,7 @@ import {
 } from 'lucide-react';
 
 const App = () => {
-  const [conversations, setConversations] = useState([
-    {
-      id: 1,
-      title: "Bienvenida",
-      messages: [
-        {
-          id: 1,
-          text: "¡Hola! Soy NutriBot 🌱. Estoy conectado a tu backend Python (FastAPI). Puedes subirme un PDF para que lo analice.",
-          sender: 'bot',
-          timestamp: new Date()
-        }
-      ],
-      pdfContext: null,
-      createdAt: new Date()
-    }
-  ]);
-
+  const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(1);
   const [inputText, setInputText] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -67,12 +51,11 @@ const App = () => {
     { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)', type: 'api', provider: 'Groq Cloud', icon: Cloud },
   ];
 
-  // --- PERSISTENCIA DE DATOS (LocalStorage) ---
+  // --- PERSISTENCIA Y CARGA ---
 
-  // 1. Cargar datos al iniciar
   useEffect(() => {
+    // Código seguro para el navegador (Client-side only)
     const savedConversations = localStorage.getItem('nutribot_conversations');
-    // Ya no cargamos apiKey del localStorage
     const savedModel = localStorage.getItem('nutribot_selected_model');
 
     if (savedConversations) {
@@ -90,24 +73,52 @@ const App = () => {
       } catch (e) {
         console.error("Error cargando historial:", e);
       }
+    } else {
+      // --- DETECCIÓN DE IDIOMA CORREGIDA ---
+      // Usamos solo navigator.language que es el estándar moderno
+      const userLang = typeof navigator !== 'undefined' ? navigator.language : 'es'; 
+      const isSpanish = userLang.startsWith('es');
+
+      const welcomeText = isSpanish 
+        ? "¡Hola! Soy NutriBot 🌱. Estoy conectado a tu backend Python. Puedes subirme un PDF o preguntarme lo que quieras sobre nutrición."
+        : "Hello! I am NutriBot 🌱. I am connected to your Python backend. You can upload a PDF or ask me anything about nutrition.";
+
+      const titleText = isSpanish ? "Bienvenida" : "Welcome";
+
+      const initialConversation = {
+        id: 1,
+        title: titleText,
+        messages: [
+          {
+            id: 1,
+            text: welcomeText,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+        ],
+        pdfContext: null,
+        createdAt: new Date()
+      };
+
+      setConversations([initialConversation]);
+      setCurrentConversationId(1);
     }
 
     if (savedModel) setSelectedModel(JSON.parse(savedModel));
   }, []);
 
-  // 2. Guardar automáticamente cuando cambian los datos
   useEffect(() => {
-    localStorage.setItem('nutribot_conversations', JSON.stringify(conversations));
+    if (conversations.length > 0) {
+      localStorage.setItem('nutribot_conversations', JSON.stringify(conversations));
+    }
   }, [conversations]);
 
-  // Eliminado useEffect de guardar apiKey
   useEffect(() => {
     localStorage.setItem('nutribot_selected_model', JSON.stringify(selectedModel));
   }, [selectedModel]);
 
   // ----------------------------------------------------
 
-  // Obtener la conversación actual
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const messages = currentConversation?.messages || [];
   const pdfContext = currentConversation?.pdfContext || null;
@@ -118,7 +129,7 @@ const App = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isThinking]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -130,16 +141,22 @@ const App = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Crear nueva conversación
   const handleNewConversation = () => {
     const newId = Date.now();
+    // Detectar idioma de nuevo para nuevas conversaciones
+    const userLang = typeof navigator !== 'undefined' ? navigator.language : 'es';
+    const isSpanish = userLang.startsWith('es');
+    const welcomeText = isSpanish 
+        ? "¡Hola! Soy NutriBot 🌱. ¿En qué puedo ayudarte hoy?"
+        : "Hello! I am NutriBot 🌱. How can I help you today?";
+
     const newConversation = {
       id: newId,
-      title: `Conversación ${conversations.length + 1}`,
+      title: isSpanish ? `Conversación ${conversations.length + 1}` : `Conversation ${conversations.length + 1}`,
       messages: [
         {
           id: newId + 1,
-          text: "¡Hola! Soy NutriBot 🌱. ¿En qué puedo ayudarte hoy?",
+          text: welcomeText,
           sender: 'bot',
           timestamp: new Date()
         }
@@ -153,13 +170,11 @@ const App = () => {
     setIsSidebarOpen(false);
   };
 
-  // Cambiar de conversación
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
     setIsSidebarOpen(false);
   };
 
-  // Eliminar conversación
   const handleDeleteConversation = (id, e) => {
     e.stopPropagation();
     if (conversations.length === 1) {
@@ -176,10 +191,9 @@ const App = () => {
     });
   };
 
-  // Actualizar título de conversación automáticamente
   const updateConversationTitle = (conversationId, firstUserMessage) => {
     setConversations(prev => prev.map(conv => {
-      if (conv.id === conversationId && conv.title.startsWith('Conversación')) {
+      if (conv.id === conversationId && (conv.title.startsWith('Conversación') || conv.title.startsWith('Conversation'))) {
         const title = firstUserMessage.length > 30
           ? firstUserMessage.substring(0, 30) + '...'
           : firstUserMessage;
@@ -196,7 +210,7 @@ const App = () => {
     if (!file.name.endsWith('.pdf')) {
       const errorMsg = {
         id: Date.now(),
-        text: "Por favor, sube solo archivos PDF.",
+        text: "Por favor, sube solo archivos PDF / Please upload only PDF files.",
         sender: 'bot',
         isError: true,
         timestamp: new Date()
@@ -236,7 +250,7 @@ const App = () => {
 
         const successMsg = {
           id: Date.now(),
-          text: `✅ PDF "${data.filename}" cargado correctamente. Ahora puedes hacerme preguntas sobre su contenido.\n\nVista previa: ${data.preview}`,
+          text: `✅ PDF "${data.filename}" cargado/loaded.\n\nVista previa/Preview: ${data.preview}`,
           sender: 'bot',
           timestamp: new Date()
         };
@@ -252,7 +266,7 @@ const App = () => {
       console.error(err);
       const errorMsg = {
         id: Date.now(),
-        text: `Error al procesar el PDF: ${err.message}`,
+        text: `Error PDF: ${err.message}`,
         sender: 'bot',
         isError: true,
         timestamp: new Date()
@@ -274,7 +288,7 @@ const App = () => {
   const handleRemovePdf = () => {
     const removeMsg = {
       id: Date.now(),
-      text: "PDF eliminado. Puedes subir otro o continuar la conversación normal.",
+      text: "PDF eliminado. / PDF removed.",
       sender: 'bot',
       timestamp: new Date()
     };
@@ -293,7 +307,6 @@ const App = () => {
     const userText = inputText;
     setInputText("");
 
-    // 1. Añadimos SOLO el mensaje del usuario
     const newUserMsg = {
       id: Date.now(),
       text: userText,
@@ -301,10 +314,8 @@ const App = () => {
       timestamp: new Date()
     };
 
-    // ID anticipado para el mensaje del bot
     const botMsgId = Date.now() + 1;
 
-    // Actualizamos conversación solo con el mensaje del usuario
     setConversations(prev => prev.map(conv =>
       conv.id === currentConversationId
         ? { ...conv, messages: [...conv.messages, newUserMsg] }
@@ -314,7 +325,6 @@ const App = () => {
     const userMessagesCount = messages.filter(m => m.sender === 'user').length;
     if (userMessagesCount === 0) updateConversationTitle(currentConversationId, userText);
 
-    // ACTIVAMOS "PENSANDO" (Pero no creamos burbuja del bot aún)
     setIsLoading(true);
     setIsThinking(true);
 
@@ -338,7 +348,7 @@ const App = () => {
       let fullText = "";
       
       const typingDelay = 10; 
-      let isFirstChunk = true; // Bandera de control
+      let isFirstChunk = true;
 
       while (!done) {
         const { value, done: doneReading } = await reader.read();
@@ -350,9 +360,6 @@ const App = () => {
           for (let i = 0; i < chunk.length; i++) {
             fullText += chunk[i];
 
-            // SI ES LA PRIMERA LETRA:
-            // 1. Quitamos "Pensando"
-            // 2. Creamos la burbuja del bot por primera vez
             if (isFirstChunk) {
                 setIsThinking(false);
                 
@@ -369,9 +376,8 @@ const App = () => {
                     : conv
                 ));
                 
-                isFirstChunk = false; // Ya no es el primer chunk
+                isFirstChunk = false;
             } else {
-                // SI YA EXISTE LA BURBUJA: Solo actualizamos el texto
                 setConversations(prev => prev.map(conv => {
                     if (conv.id !== currentConversationId) return conv;
                     
@@ -402,20 +408,15 @@ const App = () => {
         timestamp: new Date()
       };
 
-      // Si falló antes de crear la burbuja, la añadimos ahora.
-      // Si falló después, reemplazamos.
       setConversations(prev => prev.map(conv => {
         if (conv.id !== currentConversationId) return conv;
         
-        // Comprobamos si el mensaje del bot llegó a crearse
         const botMsgExists = conv.messages.some(m => m.id === botMsgId);
         
         if (botMsgExists) {
-             // Si existe, lo borramos para poner el error (opcional, o añadimos el error debajo)
              const cleanMsgs = conv.messages.filter(m => m.id !== botMsgId);
              return { ...conv, messages: [...cleanMsgs, errorMsg] };
         } else {
-             // Si no existía, simplemente añadimos el error
              return { ...conv, messages: [...conv.messages, errorMsg] };
         }
       }));
